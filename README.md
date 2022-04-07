@@ -1,4 +1,67 @@
 # QGraphics_Demo
+
+//弧度
+/*sin(弧度)
+ *
+ *
+ * l(弧长)/r(半径) = 弧度 完整的圆的弧度是2π
+ * C(周长)/r      =2PI
+ *2PI=360度，C=2*PI*R ,C/R=2*PI,xl
+ *
+
+ */
+//加载图片
+/*
+ *那么安全和正确的方法应该是什么呢？答案是我们需要用QImage做一下预处理：
+
+//correct and recommended way
+
+QImage image;
+
+image.load( ":/pics/earth.png" );
+
+QPainter painter(this);
+
+QPixmap pixmapToShow = QPixmap::fromImage( image.scaled(size(), Qt::KeepAspectRatio) );
+
+painter.drawPixmap(0,0, pixmapToShow);
+
+和QPixmap
+不同，QImage是独立于硬件的，它可以同时被另一个线程访问。QImage是存储在客户端的，对QImage的使用是非常方便和安全的。
+又由于 QImage 也是一种QPaintDevice，因此我们可以在另一个线程中对其进行绘制，而不需要在GUI
+线程中处理，使用这一方式可以很大幅度提高UI响应速度。
+因此当图片较大时，我们可以先通过QImage将图片加载进来，然后把图片缩放成需要的尺寸，最后转换成QPixmap 进行显示。
+下图是显示效果(图片是按照earth.png的原始尺寸比例缩放后显示的)：
+
+其中需要注意的是Qt::KeepAspectRatio的使用，默认参数是Qt::IgnoreAspectRatio，如果我们在程序中这么写：
+
+QPixmap pixmapToShow = QPixmap::fromImage( image.scaled(size(), Qt::IgnoreAspectRatio) );
+
+效果就是下面这个样子，earth.png被拉伸以充满整个屏幕：
+
+直接使用QImage 显示
+
+我们也可以直接使用QImage做显示，而不转换成QPixmap ，这要根据我们应用的具体需求来决定，如果需要的话我们可以这么写：
+
+//correct, some times may be needed
+
+QImage image;
+
+image.load( ":/pics/earth.png" );
+
+QPainter painter(this);
+
+painter.drawImage(0,0, image);
+
+ *
+ *
+ *
+ */
+
+
+
+
+
 QGraphics各种item的例子
 /* RenderHint
  *
