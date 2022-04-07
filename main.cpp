@@ -1,12 +1,70 @@
 
 #include <QApplication>
+#include <QBitmap>
+#include <QDebug>
 #include <QDesktopServices>
+#include <QDrag>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
+#include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
+#include <QMimeData>
+#include <QPainter>
+#include <QPixmap>
 #include <QPushButton>
+#include <QRandomGenerator>
 #include <QUrl>
+#include <QtMath>
 #include "math.h"
+
+//加载图片
+/*
+ *那么安全和正确的方法应该是什么呢？答案是我们需要用QImage做一下预处理：
+
+//correct and recommended way
+
+QImage image;
+
+image.load( ":/pics/earth.png" );
+
+QPainter painter(this);
+
+QPixmap pixmapToShow = QPixmap::fromImage( image.scaled(size(), Qt::KeepAspectRatio) );
+
+painter.drawPixmap(0,0, pixmapToShow);
+
+和QPixmap
+不同，QImage是独立于硬件的，它可以同时被另一个线程访问。QImage是存储在客户端的，对QImage的使用是非常方便和安全的。
+又由于 QImage 也是一种QPaintDevice，因此我们可以在另一个线程中对其进行绘制，而不需要在GUI
+线程中处理，使用这一方式可以很大幅度提高UI响应速度。
+因此当图片较大时，我们可以先通过QImage将图片加载进来，然后把图片缩放成需要的尺寸，最后转换成QPixmap 进行显示。
+下图是显示效果(图片是按照earth.png的原始尺寸比例缩放后显示的)：
+
+其中需要注意的是Qt::KeepAspectRatio的使用，默认参数是Qt::IgnoreAspectRatio，如果我们在程序中这么写：
+
+QPixmap pixmapToShow = QPixmap::fromImage( image.scaled(size(), Qt::IgnoreAspectRatio) );
+
+效果就是下面这个样子，earth.png被拉伸以充满整个屏幕：
+
+直接使用QImage 显示
+
+我们也可以直接使用QImage做显示，而不转换成QPixmap ，这要根据我们应用的具体需求来决定，如果需要的话我们可以这么写：
+
+//correct, some times may be needed
+
+QImage image;
+
+image.load( ":/pics/earth.png" );
+
+QPainter painter(this);
+
+painter.drawImage(0,0, image);
+
+ *
+ *
+ *
+ */
+
 /* RenderHint
  *
  * QPainter::TextAntialiasing //绘制的字体抗锯齿
@@ -152,6 +210,146 @@ void UICanvasItemBase::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 }
 */
 
+//弧度
+/*sin(弧度)
+ *
+ *
+ * l(弧长)/r(半径) = 弧度 完整的圆的弧度是2π
+ * C(周长)/r      =2PI
+ *2PI=360度，C=2*PI*R ,C/R=2*PI,xl
+ *
+
+ */
+
+class myDropItem : public QGraphicsObject {
+  QColor color = Qt::lightGray;
+
+ public:
+  myDropItem();
+  QRectF boundingRect() const override;
+  void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
+
+ protected:
+  void dropEvent(QGraphicsSceneDragDropEvent *event) override;
+  void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
+  void dragLeaveEvent(QGraphicsSceneDragDropEvent *event) override;
+};
+
+myDropItem::myDropItem() { setAcceptDrops(true); }
+
+QRectF myDropItem::boundingRect() const { return QRectF(-30, -30, 90, 90); }
+void myDropItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) {
+  Q_UNUSED(option)
+  Q_UNUSED(widget)
+  painter->setPen(QPen(Qt::black, 1));
+  painter->setBrush(color);
+  painter->drawEllipse(-28, -28, 85, 85);
+
+  painter->drawText(0, 0, "into color");
+}
+
+void myDropItem::dropEvent(QGraphicsSceneDragDropEvent *event) {
+  if (event->mimeData()->hasColor()) {
+    qDebug() << "dropEvent";
+    event->setAccepted(true);
+    color = qvariant_cast<QColor>(event->mimeData()->colorData());
+    update();
+  } else {
+    qDebug() << "!dropEvent";
+    event->setAccepted(false);
+  }
+}
+void myDropItem::dragLeaveEvent(QGraphicsSceneDragDropEvent *event) {
+  Q_UNUSED(event);
+  qDebug() << "dragLeaveEvent";
+  color = Qt::gray;
+  update();
+}
+
+void myDropItem::dragEnterEvent(QGraphicsSceneDragDropEvent *event) {
+  if (event->mimeData()->hasColor()) {
+    qDebug() << "dragEnterEvent";
+    event->setAccepted(true);
+    color = qvariant_cast<QColor>(event->mimeData()->colorData()).lighter(130);
+    update();
+  } else {
+    qDebug() << "!dragEnterEvent";
+    event->setAccepted(false);
+  }
+}
+
+class myEllipseItem : public QGraphicsItem {
+  QColor color;
+
+ public:
+  myEllipseItem();
+
+  QRectF boundingRect() const override;
+  void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+
+ protected:
+  void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
+  void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+  void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+};
+
+myEllipseItem::myEllipseItem()
+    : color(QRandomGenerator::global()->bounded(256), QRandomGenerator::global()->bounded(256),
+            QRandomGenerator::global()->bounded(256)) {
+  setCursor(Qt::OpenHandCursor);
+  setToolTip(QString("RGB(%1,%2,%3)").arg(color.red()).arg(color.green()).arg(color.blue()));
+  setAcceptedMouseButtons(Qt::LeftButton);
+}
+
+void myEllipseItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) {
+  Q_UNUSED(option)
+  Q_UNUSED(widget)
+
+  painter->setPen(Qt::NoPen);
+  painter->setBrush(Qt::darkGray);
+  painter->drawEllipse(-12, -12, 30, 30);
+  painter->setPen(QPen(Qt::black, 1));
+  painter->setBrush(QBrush(color));
+  painter->drawEllipse(-15, -15, 30, 30);
+}
+QRectF myEllipseItem::boundingRect() const { return QRectF(-15.5, -15.5, 34, 34); }
+
+void myEllipseItem::mouseMoveEvent(QGraphicsSceneMouseEvent *event) {
+  if (QLineF(event->screenPos(), event->buttonDownScreenPos(Qt::LeftButton)).length() <
+      QApplication::startDragDistance()) {
+    return;
+  }
+  qDebug() << "length:" << QLineF(event->screenPos(), event->buttonDownScreenPos(Qt::LeftButton)).length()
+           << "event->screenPos():" << event->screenPos()
+           << "event->buttonDownScreenPos(Qt::LeftButton):" << event->buttonDownScreenPos(Qt::LeftButton);
+  QDrag *drag = new QDrag(event->widget());
+  QMimeData *mimedata = new QMimeData;
+
+  drag->setMimeData(mimedata);
+
+  mimedata->setColorData(color);
+  mimedata->setText(QString("#%1%2%3")
+                        .arg(color.red(), 2, 16, QLatin1Char('0'))
+                        .arg(color.green(), 2, 16, QLatin1Char('0'))
+                        .arg(color.blue(), 2, 16, QLatin1Char('0')));
+  QPixmap pixmap(34, 34);
+
+  pixmap.fill(Qt::white);
+  QPainter painter(&pixmap);
+  painter.translate(15, 15);
+  painter.setRenderHint(QPainter::Antialiasing);
+  paint(&painter, nullptr, nullptr);
+  painter.end();
+  pixmap.setMask(pixmap.createHeuristicMask());
+  drag->setPixmap(pixmap);
+  drag->setHotSpot(QPoint(15, 20));
+
+  drag->exec();
+  setCursor(Qt::OpenHandCursor);
+}
+void myEllipseItem::mousePressEvent(QGraphicsSceneMouseEvent *event) { setCursor(Qt::ClosedHandCursor); }
+void myEllipseItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event) { setCursor(Qt::OpenHandCursor); }
+
 class GraphicsView : public QGraphicsView {
  public slots:
   void zoomIn() { scale(1.2, 1.2); }
@@ -238,9 +436,9 @@ int main(int argc, char *argv[]) {
   QPushButton *m_rotateRightBtn = new QPushButton("rotateRight");
 
   m_zoomInBtn->move(400, 10);
-  m_zoomOutBtn->move(400, 30);
-  m_rotateLeftBtn->move(400, 50);
-  m_rotateRightBtn->move(400, 70);
+  m_zoomOutBtn->move(400, 50);
+  m_rotateLeftBtn->move(400, 90);
+  m_rotateRightBtn->move(400, 130);
   scene.addWidget(m_zoomInBtn);
   scene.addWidget(m_zoomOutBtn);
   scene.addWidget(m_rotateLeftBtn);
@@ -252,6 +450,34 @@ int main(int argc, char *argv[]) {
   QObject::connect(m_rotateLeftBtn, &QPushButton::clicked, [&]() { view.rotateLeft(); });
   QObject::connect(m_rotateRightBtn, &QPushButton::clicked, [&]() { view.rotateRight(); });
 
+  QGraphicsEllipseItem *ellipseItem = new QGraphicsEllipseItem;
+  ellipseItem->setRect(200, 200, 200, 200);
+
+  scene.addItem(ellipseItem);
+
+  int r = 100;
+  float rad = 2 * M_PI;
+  for (int i = 0; i < 180; i++) {
+    QGraphicsEllipseItem *ellipseItemb = new QGraphicsEllipseItem;
+
+    ellipseItemb->setRect(100 + sin((rad * i) / 180) * r, 100 + cos((rad * i) / 180) * r, 30, 30);
+    // ellipseItemb->setRect(::sin((i * 2 * M_PI) / 10.0) * 110, ::cos((i * 6.28) / 10.0) * 110, 30, 30);
+    ellipseItemb->setBrush(QColor(QRandomGenerator::global()->bounded(256), QRandomGenerator::global()->bounded(256),
+                                  QRandomGenerator::global()->bounded(256)));
+
+    scene.addItem(ellipseItemb);
+  }
+
+  for (int i = 0; i < 10; i++) {
+    myEllipseItem *myitem = new myEllipseItem;
+    myitem->setPos(300 + sin(rad * i / 10) * r, 300 + cos(rad * i / 10) * r);
+    scene.addItem(myitem);
+  }
+
+  myDropItem *dropItem = new myDropItem;
+
+  dropItem->setPos(310, 310);
+  scene.addItem(dropItem);
   view.show();
   return a.exec();
 }
