@@ -3,3 +3,104 @@
 向事件队列post一个事件，事件的处理将以调用我们所感兴趣的方法为主（当然这需要线程有一个正在运行的事件循环）。
 而触发机制的实现是由moc提供的内省方法实现的。因此，只有信号、槽以及被标记成Q_INVOKABLE的方法才能够被其它线程所触发调用。
 如果你不想通过跨线程的信号、槽这一方法来实现调用驻足在其他线程里的QObject方法。另一选择就是将方法声明为Q_INVOKABLE，并且在另一线程中用invokeMethod唤起。
+
+
+单例：
+但是Qt本身就提供了专门的宏 Q_GLOBAL_STATIC
+
+通过这个宏不但定义简单，还可以获得线程安全性。
+
+rule.h
+
+#ifndef RULE_H
+#define RULE_H
+class Rule
+{
+public:
+    static Rule* instance();
+};
+#endif // RULE_H
+rule.cpp
+
+#include "rule.h"
+Q_GLOBAL_STATIC(Rule, rule)
+Rule* Rule::instance()
+{
+    return rule();
+}
+写法很简单，用法也很简单
+
+在任何地方，引用头文件 include "rule.h"
+
+就可以 Rule::instance()->xxxxxx()
+
+抽象工厂模式
+主要是利用 Q_INVOKABLE 和 QMetaObject::newInstance
+
+比如说你有一个Card类 card.h 和 2个派生的类
+
+class Card : public QObject
+{
+   Q_OBJECT
+public:
+   explicit Card();
+};
+class CentaurWarrunner : public Card
+{
+   Q_OBJECT
+public:
+   Q_INVOKABLE CentaurWarrunner();
+};
+class KeeperoftheLight : public Card
+{
+   Q_OBJECT
+public:
+   Q_INVOKABLE KeeperoftheLight();
+};
+然后你写一个 engine.h 和 engine.cpp
+
+#ifndef ENGINE_H
+#define ENGINE_H
+#include <QHash>
+#include <QList>
+#include <QMetaObject>
+class Card;
+class Engine
+{
+public:
+    static Engine* instance();
+    void loadAllCards();
+    Card* cloneCard(int ISDN);
+private:
+    QHash<int, const QMetaObject*> metaobjects;
+    QList<Card*> allcards;
+};
+#endif // ENGINE_H
+#include "engine.h"
+#include "card.h"
+Q_GLOBAL_STATIC(Engine, engine)
+Engine* Engine::instance()
+{
+   return engine();
+}
+void Engine::loadAllCards()
+{
+   allcards << new CentaurWarrunner()
+            << new KeeperoftheLight();
+   for (Card* card : allcards)
+   {
+       metaobjects.insert(card->getISDN(), card->metaObject());
+   }
+}
+Card* Engine::cloneCard(int ISDN)
+{
+   const QMetaObject* meta = metaobjects.value(ISDN);
+   if(meta == nullptr)
+   {
+       return nullptr;
+   }
+   return qobject_cast<Card*>(meta->newInstance());
+}
+这时，你就可以在其他cpp里通过 Card* card = Engine::instance()->cloneCard(ISDN);
+
+从不同的int值得到不同的Card类型的对象
